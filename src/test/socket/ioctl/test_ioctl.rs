@@ -254,7 +254,12 @@ fn test_siocgstamp(init_method: SocketInitMethod, sock_type: libc::c_int) -> Res
 
         // use use a small threshold when comparing the send time to the recv time below since the
         // message is only travelling over localhost; should be much shorter than the sleep above
-        let threshold = Duration::from_millis(1);
+        let sleep_duration = Duration::from_millis(50);
+        let threshold = if test_utils::running_in_shadow() {
+            Duration::from_millis(1)
+        } else {
+            sleep_duration + Duration::from_millis(1)
+        };
 
         // recv() has not been called on the socket, so should still return ENOENT for inet sockets
         let expected_result = match (init_method.domain(), sock_type) {
