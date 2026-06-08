@@ -32,7 +32,7 @@ mod clone;
 mod close_range;
 mod epoll;
 mod eventfd;
-mod fcntl;
+pub mod fcntl;
 mod file;
 mod fileat;
 mod futex;

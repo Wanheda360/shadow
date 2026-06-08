@@ -48,6 +48,24 @@ impl SyscallHandler {
             .deregister_descriptor(fd)
             .ok_or(linux_api::errno::Errno::EBADF)?;
 
+        // POSIX: closing ANY fd for a file releases ALL locks held by this process
+        // on that file, even if other file descriptors for the same file remain open.
+        // We must do this before desc.close() because close() may consume the
+        // descriptor and make the file key unresolvable.
+        {
+            use crate::core::work::task::TaskRef;
+            use shadow_shim_helper_rs::simulation_time::SimulationTime;
+
+            let key = crate::host::syscall::handler::fcntl::file_key_for_desc(&desc);
+            let pid = ctx.objs.process.id();
+            let waiters = ctx.objs.host.file_lock_table_borrow_mut().release_all(key, pid);
+            for w in waiters {
+                let (wpid, wtid) = (w.pid, w.tid);
+                let task = TaskRef::new(move |host| host.resume(wpid, wtid));
+                ctx.objs.host.schedule_task_with_delay(task, SimulationTime::ZERO);
+            }
+        }
+        
         // if there are still valid descriptors to the open file, close() will do nothing
         // and return None
         CallbackQueue::queue_and_run_with_legacy(|cb_queue| desc.close(ctx.objs.host, cb_queue))

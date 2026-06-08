@@ -223,13 +223,32 @@ impl SyscallHandler {
         /* len_ptr */ *const libc::size_t,
     );
     pub fn get_robust_list(
-        _ctx: &mut SyscallContext,
-        _pid: std::ffi::c_int,
-        _head_ptr: ForeignPtr<ForeignPtr<linux_api::futex::robust_list_head>>,
-        _len_ptr: ForeignPtr<libc::size_t>,
+        ctx: &mut SyscallContext,
+        pid: std::ffi::c_int,
+        head_ptr: ForeignPtr<ForeignPtr<linux_api::futex::robust_list_head>>,
+        len_ptr: ForeignPtr<libc::size_t>,
     ) -> Result<(), Errno> {
-        warn_once_then_debug!("get_robust_list was called but we don't yet support it");
-        Err(Errno::ENOSYS)
+        // Shadow only supports querying the calling thread's own robust list.
+        // pid == 0 means "calling thread". Other pids would require cross-thread
+        // lookup which we skip for now — Go only ever passes 0.
+        if pid != 0 {
+            log::debug!("get_robust_list: only pid=0 (self) is supported, got pid={pid}");
+            return Err(Errno::ESRCH);
+        }
+
+        let head = ctx
+            .objs
+            .thread
+            .robust_list_head()
+            .unwrap_or(ForeignPtr::null());
+
+        let len = std::mem::size_of::<linux_api::futex::robust_list_head>();
+
+        let mut mem = ctx.objs.process.memory_borrow_mut();
+        mem.write(head_ptr, &head).map_err(|_| Errno::EFAULT)?;
+        mem.write(len_ptr, &len).map_err(|_| Errno::EFAULT)?;
+
+        Ok(())
     }
 
     log_syscall!(
@@ -239,12 +258,31 @@ impl SyscallHandler {
         /* len */ libc::size_t,
     );
     pub fn set_robust_list(
-        _ctx: &mut SyscallContext,
-        _head: ForeignPtr<linux_api::futex::robust_list_head>,
-        _len: libc::size_t,
+        ctx: &mut SyscallContext,
+        head: ForeignPtr<linux_api::futex::robust_list_head>,
+        len: libc::size_t,
     ) -> Result<(), Errno> {
-        warn_once_then_debug!("set_robust_list was called but we don't yet support it");
-        Err(Errno::ENOSYS)
+        // The kernel rejects any size other than sizeof(robust_list_head).
+        if len != std::mem::size_of::<linux_api::futex::robust_list_head>() {
+            log::debug!(
+                "set_robust_list: invalid len={len}, expected {}",
+                std::mem::size_of::<linux_api::futex::robust_list_head>()
+            );
+            return Err(Errno::EINVAL);
+        }
+
+        ctx.objs.thread.set_robust_list_head(if head.is_null() {
+            None
+        } else {
+            Some(head)
+        });
+
+        log::trace!(
+            "set_robust_list: thread {:?} registered robust list at {head:p}",
+            ctx.objs.thread.id()
+        );
+
+        Ok(())
     }
 }
 

@@ -691,6 +691,35 @@ impl ExplicitDrop for RunnableProcess {
     type ExplicitDropResult = ();
 
     fn explicit_drop(mut self, host: &Self::ExplicitDropParam) -> Self::ExplicitDropResult {
+        // POSIX: release all file locks held by this process before threads are
+        // dropped. The descriptor table is owned by the threads via RootedRc, so
+        // we must drain it here while threads still exist. All threads in a
+        // process share the same table, so draining from any one thread is enough.
+        {
+            let pid = self.common.id;
+            if let Some(thread_rc) = self.threads.get_mut().values().next() {
+                let thread = thread_rc.borrow(host.root());
+                let descs: Vec<_> = thread
+                    .descriptor_table_borrow_mut(host)
+                    .remove_all()
+                    .collect();
+                drop(thread); // release borrow before touching host below
+                for desc in descs {
+                    use crate::core::work::task::TaskRef;
+                    use shadow_shim_helper_rs::simulation_time::SimulationTime;
+                    let key = crate::host::syscall::handler::fcntl::file_key_for_desc(&desc);
+                    let waiters = host.file_lock_table_borrow_mut().release_all(key, pid);
+                    for w in waiters {
+                        let (wpid, wtid) = (w.pid, w.tid);
+                        let task = TaskRef::new(move |h| h.resume(wpid, wtid));
+                        host.schedule_task_with_delay(task, SimulationTime::ZERO);
+                    }
+                    // desc drops here, decrementing the file's refcount normally
+                }
+            }
+        }
+
+        // Now drop threads as before.
         let threads = std::mem::take(self.threads.get_mut());
         for thread in threads.into_values() {
             thread.explicit_drop_recursive(host.root(), host);

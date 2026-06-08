@@ -39,6 +39,7 @@ use crate::cshadow;
 use crate::host::descriptor::socket::abstract_unix_ns::AbstractUnixNamespace;
 use crate::host::descriptor::socket::inet::InetSocket;
 use crate::host::futex_table::FutexTable;
+use crate::host::file_lock_table::FileLockTable;
 use crate::host::network::interface::{FifoPacketPriority, NetworkInterface, PcapOptions};
 use crate::host::network::namespace::NetworkNamespace;
 use crate::host::process::Process;
@@ -130,6 +131,9 @@ pub struct Host {
 
     // map address to futex objects
     futex_table: RefCell<FutexTable>,
+
+    // map address to file lock objects
+    file_lock_table: RefCell<FileLockTable>,
 
     #[cfg(feature = "perf_timers")]
     execution_timer: RefCell<PerfTimer>,
@@ -293,6 +297,7 @@ impl Host {
             relay_inet_in: Arc::new(relay_inet_in),
             relay_loopback: Arc::new(relay_loopback),
             futex_table: RefCell::new(FutexTable::new()),
+            file_lock_table: RefCell::new(FileLockTable::new()),
             random,
             shim_shmem,
             shim_shmem_lock: RefCell::new(None),
@@ -634,6 +639,16 @@ impl Host {
     #[track_caller]
     pub fn futextable_borrow_mut(&self) -> impl DerefMut<Target = FutexTable> + '_ {
         self.futex_table.borrow_mut()
+    }
+
+    #[track_caller]
+    pub fn file_lock_table_borrow(&self) -> impl Deref<Target = FileLockTable> + '_ {
+        self.file_lock_table.borrow()
+    }
+
+    #[track_caller]
+    pub fn file_lock_table_borrow_mut(&self) -> impl DerefMut<Target = FileLockTable> + '_ {
+        self.file_lock_table.borrow_mut()
     }
 
     #[allow(non_snake_case)]

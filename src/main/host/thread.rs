@@ -52,6 +52,10 @@ pub struct Thread {
     // If non-NULL, this address should be cleared and futex-awoken on thread exit.
     // See set_tid_address(2).
     tid_address: Cell<ForeignPtr<libc::pid_t>>,
+    // Robust futex list head, set via set_robust_list(2).
+    // Stored so get_robust_list(2) can return it; Shadow does not walk the
+    // list itself (lock cleanup is handled by FileLockTable on thread exit).
+    robust_list_head: Cell<Option<ForeignPtr<linux_api::futex::robust_list_head>>>,
     shim_shared_memory: ShMemBlock<'static, ThreadShmem>,
     syscallhandler: RootedRefCell<SyscallHandler>,
     /// Descriptor table; potentially shared with other threads and processes.
@@ -496,6 +500,7 @@ impl Thread {
                 sched_util_max: 0,
             }),
             tid_address: Cell::new(ForeignPtr::null()),
+            robust_list_head: Cell::new(None),
             shim_shared_memory: shmalloc(ThreadShmem::new(
                 &host.shim_shmem_lock_borrow().unwrap(),
                 tid.into(),
@@ -571,6 +576,17 @@ impl Thread {
     /// futex-wake operation on the given address on termination.
     pub fn set_tid_address(&self, ptr: ForeignPtr<libc::pid_t>) {
         self.tid_address.set(ptr)
+    }
+
+    pub fn robust_list_head(&self) -> Option<ForeignPtr<linux_api::futex::robust_list_head>> {
+        self.robust_list_head.get()
+    }
+
+    pub fn set_robust_list_head(
+        &self,
+        head: Option<ForeignPtr<linux_api::futex::robust_list_head>>,
+    ) {
+        self.robust_list_head.set(head);
     }
 
     pub fn unblocked_signal_pending(
