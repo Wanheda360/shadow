@@ -1298,7 +1298,7 @@ impl Process {
         match res {
             crate::host::thread::ResumeResult::Blocked => {
                 debug!(
-                    "thread {tid} in process '{}' still running, but blocked",
+                    "thread {tid} in process '{}' still running, but blocked!!",
                     &*self.name()
                 );
             }

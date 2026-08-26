@@ -157,10 +157,15 @@ impl From<SyscallReturn> for SyscallResult {
                 }
             }
             // SAFETY: XXX: We're assuming this points to a valid SysCallCondition.
-            SyscallReturn::Block(blocked) => Err(SyscallError::Blocked(Blocked {
-                condition: unsafe { SyscallCondition::consume_from_c(blocked.cond) },
-                restartable: blocked.restartable,
-            })),
+            SyscallReturn::Block(blocked) => {
+                debug!(
+                    "blocked with value in process"
+                );
+                Err(SyscallError::Blocked(Blocked {
+                    condition: unsafe { SyscallCondition::consume_from_c(blocked.cond) },
+                    restartable: blocked.restartable,
+                }))
+            },
             SyscallReturn::Native => Err(SyscallError::Native),
         }
     }

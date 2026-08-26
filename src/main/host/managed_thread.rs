@@ -291,6 +291,9 @@ impl ManagedThread {
 
                     match scr {
                         SyscallReturn::Block(b) => {
+                            debug!(
+                                "thread in process blocked on syscall"
+                            );
                             return ResumeResult::Blocked(unsafe {
                                 SyscallCondition::consume_from_c(b.cond)
                             });
